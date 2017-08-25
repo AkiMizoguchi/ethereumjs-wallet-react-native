@@ -47,26 +47,26 @@ Object.defineProperty(Wallet.prototype, 'pubKey', {
   }
 })
 
-Wallet.generate = function (icapDirect) {
+Wallet.generate = async function (icapDirect) {
   if (icapDirect) {
     while (true) {
-      var privKey = crypto.randomBytes(32)
+      var privKey = await window.randomBytes(32)
       if (ethUtil.privateToAddress(privKey)[0] === 0) {
         return new Wallet(privKey)
       }
     }
   } else {
-    return new Wallet(crypto.randomBytes(32))
+    return new Wallet(await window.randomBytes(32))
   }
 }
 
-Wallet.generateVanityAddress = function (pattern) {
+Wallet.generateVanityAddress = async function (pattern) {
   if (typeof pattern !== 'object') {
     pattern = new RegExp(pattern)
   }
 
   while (true) {
-    var privKey = crypto.randomBytes(32)
+    var privKey = await window.randomBytes(32)
     var address = ethUtil.privateToAddress(privKey)
 
     if (pattern.test(address.toString('hex'))) {
@@ -104,12 +104,12 @@ Wallet.prototype.getChecksumAddressString = function () {
 }
 
 // https://github.com/ethereum/wiki/wiki/Web3-Secret-Storage-Definition
-Wallet.prototype.toV3 = function (password, opts) {
+Wallet.prototype.toV3 = async function (password, opts) {
   assert(this._privKey, 'This is a public key only wallet')
 
   opts = opts || {}
-  var salt = opts.salt || crypto.randomBytes(32)
-  var iv = opts.iv || crypto.randomBytes(16)
+  var salt = opts.salt || await window.randomBytes(32)
+  var iv = opts.iv || await window.randomBytes(16)
 
   var derivedKey
   var kdf = opts.kdf || 'scrypt'
@@ -143,7 +143,7 @@ Wallet.prototype.toV3 = function (password, opts) {
 
   return {
     version: 3,
-    id: uuid.v4({ random: opts.uuid || crypto.randomBytes(16) }),
+    id: uuid.v4({ random: opts.uuid || await window.randomBytes(16) }),
     address: this.getAddress().toString('hex'),
     crypto: {
       ciphertext: ciphertext.toString('hex'),
