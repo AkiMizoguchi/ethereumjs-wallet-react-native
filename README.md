@@ -1,4 +1,4 @@
-# ethereumjs-wallet
+# ethereumjs-wallet-react-native
 
 [![NPM Package](https://img.shields.io/npm/v/ethereumjs-wallet.svg?style=flat-square)](https://www.npmjs.org/package/ethereumjs-wallet)
 [![Build Status](https://img.shields.io/travis/ethereumjs/ethereumjs-wallet.svg?branch=master&style=flat-square)](https://travis-ci.org/ethereumjs/ethereumjs-wallet)
