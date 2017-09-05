@@ -127,7 +127,7 @@ Wallet.prototype.toV3 = async function (password, opts) {
     kdfparams.n = opts.n || 262144
     kdfparams.r = opts.r || 8
     kdfparams.p = opts.p || 1
-    derivedKey = scryptsy(new Buffer(password), salt, kdfparams.n, kdfparams.r, kdfparams.p, kdfparams.dklen)
+    derivedKey = Buffer.from(await window.scryptsy(new Buffer(password), salt, kdfparams.n, kdfparams.r, kdfparams.p, kdfparams.dklen))
   } else {
     throw new Error('Unsupported kdf')
   }
