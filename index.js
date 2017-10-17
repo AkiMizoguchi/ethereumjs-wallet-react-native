@@ -158,6 +158,58 @@ Wallet.prototype.toV3 = async function (password, opts) {
   }
 }
 
+Wallet.toCryptoMemCode = async function (code, password, opts) {
+
+    opts = opts || {}
+    var salt = opts.salt || await window.randomBytes(32)
+    var iv = opts.iv || await window.randomBytes(16)
+
+    var derivedKey
+    var kdf = opts.kdf || 'scrypt'
+    var kdfparams = {
+        dklen: opts.dklen || 32,
+        salt: salt.toString('hex')
+    }
+
+    if (kdf === 'pbkdf2') {
+        kdfparams.c = opts.c || 262144
+        kdfparams.prf = 'hmac-sha256'
+        derivedKey = crypto.pbkdf2Sync(new Buffer(password), salt, kdfparams.c, kdfparams.dklen, 'sha256')
+    } else if (kdf === 'scrypt') {
+        // FIXME: support progress reporting callback
+        kdfparams.n = opts.n || 262144
+        kdfparams.r = opts.r || 8
+        kdfparams.p = opts.p || 1
+        derivedKey = Buffer.from(await window.scryptsy(new Buffer(password), salt, kdfparams.n, kdfparams.r, kdfparams.p, kdfparams.dklen))
+    } else {
+        throw new Error('Unsupported kdf')
+    }
+
+    var cipher = crypto.createCipheriv(opts.cipher || 'aes-128-ctr', derivedKey.slice(0, 16), iv)
+    if (!cipher) {
+        throw new Error('Unsupported cipher')
+    }
+
+    var ciphertext = Buffer.concat([ cipher.update(code), cipher.final() ])
+
+    var mac = ethUtil.sha3(Buffer.concat([ derivedKey.slice(16, 32), new Buffer(ciphertext, 'hex') ]))
+
+    return {
+        version: 3,
+        id: uuid.v4({ random: opts.uuid || await window.randomBytes(16) }),
+        crypto: {
+        ciphertext: ciphertext.toString('hex'),
+            cipherparams: {
+            iv: iv.toString('hex')
+        },
+        cipher: opts.cipher || 'aes-128-ctr',
+            kdf: kdf,
+            kdfparams: kdfparams,
+            mac: mac.toString('hex')
+        }
+    }
+}
+
 Wallet.prototype.getV3Filename = function (timestamp) {
   /*
    * We want a timestamp like 2016-03-15T17-11-33.007598288Z. Date formatting
@@ -210,7 +262,7 @@ Wallet.fromExtendedPrivateKey = function (priv) {
 }
 
 // https://github.com/ethereum/go-ethereum/wiki/Passphrase-protected-key-store-spec
-Wallet.fromV1 = function (input, password) {
+Wallet.fromV1 = async function (input, password) {
   assert(typeof password === 'string')
   var json = (typeof input === 'object') ? input : JSON.parse(input)
 
@@ -223,7 +275,7 @@ Wallet.fromV1 = function (input, password) {
   }
 
   var kdfparams = json.Crypto.KeyHeader.KdfParams
-  var derivedKey = scryptsy(new Buffer(password), new Buffer(json.Crypto.Salt, 'hex'), kdfparams.N, kdfparams.R, kdfparams.P, kdfparams.DkLen)
+  var derivedKey = Buffer.from(await window.scryptsy(new Buffer(password), new Buffer(json.Crypto.Salt, 'hex'), kdfparams.N, kdfparams.R, kdfparams.P, kdfparams.DkLen))
 
   var ciphertext = new Buffer(json.Crypto.CipherText, 'hex')
 
@@ -239,7 +291,7 @@ Wallet.fromV1 = function (input, password) {
   return new Wallet(seed)
 }
 
-Wallet.fromV3 = function (input, password, nonStrict) {
+Wallet.fromV3 = async function (input, password, nonStrict) {
   assert(typeof password === 'string')
   var json = (typeof input === 'object') ? input : JSON.parse(nonStrict ? input.toLowerCase() : input)
 
@@ -253,7 +305,7 @@ Wallet.fromV3 = function (input, password, nonStrict) {
     kdfparams = json.crypto.kdfparams
 
     // FIXME: support progress reporting callback
-    derivedKey = scryptsy(new Buffer(password), new Buffer(kdfparams.salt, 'hex'), kdfparams.n, kdfparams.r, kdfparams.p, kdfparams.dklen)
+    derivedKey = Buffer.from(await window.scryptsy(new Buffer(password), new Buffer(kdfparams.salt, 'hex'), kdfparams.n, kdfparams.r, kdfparams.p, kdfparams.dklen))
   } else if (json.crypto.kdf === 'pbkdf2') {
     kdfparams = json.crypto.kdfparams
 
@@ -277,6 +329,46 @@ Wallet.fromV3 = function (input, password, nonStrict) {
   var seed = decipherBuffer(decipher, ciphertext, 'hex')
 
   return new Wallet(seed)
+}
+
+Wallet.toDecryptedMemCode = async function (input, password, nonStrict) {
+    assert(typeof password === 'string')
+    var json = (typeof input === 'object') ? input : JSON.parse(nonStrict ? input.toLowerCase() : input)
+
+    if (json.version !== 3) {
+        throw new Error('Not a V3 wallet')
+    }
+
+    var derivedKey
+    var kdfparams
+    if (json.crypto.kdf === 'scrypt') {
+        kdfparams = json.crypto.kdfparams
+
+        // FIXME: support progress reporting callback
+        derivedKey = Buffer.from(await window.scryptsy(new Buffer(password), new Buffer(kdfparams.salt, 'hex'), kdfparams.n, kdfparams.r, kdfparams.p, kdfparams.dklen))
+    } else if (json.crypto.kdf === 'pbkdf2') {
+        kdfparams = json.crypto.kdfparams
+
+        if (kdfparams.prf !== 'hmac-sha256') {
+            throw new Error('Unsupported parameters to PBKDF2')
+        }
+
+        derivedKey = crypto.pbkdf2Sync(new Buffer(password), new Buffer(kdfparams.salt, 'hex'), kdfparams.c, kdfparams.dklen, 'sha256')
+    } else {
+        throw new Error('Unsupported key derivation scheme')
+    }
+
+    var ciphertext = new Buffer(json.crypto.ciphertext, 'hex')
+
+    var mac = ethUtil.sha3(Buffer.concat([ derivedKey.slice(16, 32), ciphertext ]))
+    if (mac.toString('hex') !== json.crypto.mac) {
+        throw new Error('Key derivation failed - possibly wrong passphrase')
+    }
+
+    var decipher = crypto.createDecipheriv(json.crypto.cipher, derivedKey.slice(0, 16), new Buffer(json.crypto.cipherparams.iv, 'hex'))
+    var seed = decipherBuffer(decipher, ciphertext, 'hex')
+
+    return seed.toString()
 }
 
 /*
