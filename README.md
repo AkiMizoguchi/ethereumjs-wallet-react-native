@@ -23,6 +23,27 @@ Features not supported:
 - signing transactions
 - managing storage (neither in node.js or the browser)
 
+## Usage
+
+You should be import they first:
+
+https://github.com/WoeOm/react-native-secure-randombytes
+
+https://github.com/WoeOm/react-native-safe-crypto
+
+```js
+import { asyncRandomBytes } from 'react-native-secure-randombytes'
+import safeCrypto from 'react-native-safe-crypto'
+
+window.randomBytes = asyncRandomBytes
+window.scryptsy = safeCrypto.scrypt
+```
+
+demo:
+```js
+const wallet = await EthJs.Wallet.generate()
+```
+
 ## Wallet API
 
 Constructors:
